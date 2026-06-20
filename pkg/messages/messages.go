@@ -34,6 +34,18 @@ func Unpack(packed []byte) (*Message, error) {
 }
 
 func Encrypt(key, content, syncKey []byte, me, recipient *identity.User) (*EncryptedMessage, error) {
+	var (
+		derivedKey    []byte
+		payloadData   []byte
+		packedMessage []byte
+	)
+
+	defer func() {
+		crypto.Zero(derivedKey)
+		crypto.Zero(payloadData)
+		crypto.Zero(packedMessage)
+	}()
+
 	salt, err := crypto.RandomBytes(32)
 	if err != nil {
 		return nil, err
@@ -44,7 +56,7 @@ func Encrypt(key, content, syncKey []byte, me, recipient *identity.User) (*Encry
 		return nil, err
 	}
 
-	derivedKey, err := crypto.HKDF(key, salt, messageInfo, 32)
+	derivedKey, err = crypto.HKDF(key, salt, messageInfo, 32)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +78,7 @@ func Encrypt(key, content, syncKey []byte, me, recipient *identity.User) (*Encry
 	timestampBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(timestampBytes, uint64(timestamp))
 
-	payloadData := crypto.ConcatBytes(timestampBytes, []byte(me.ID), content)
+	payloadData = crypto.ConcatBytes(timestampBytes, []byte(me.ID), content)
 
 	syncTag, err := crypto.ComputeHMAC(syncKey, payloadData)
 	if err != nil {
@@ -80,7 +92,7 @@ func Encrypt(key, content, syncKey []byte, me, recipient *identity.User) (*Encry
 		Timestamp: timestamp,
 	}
 
-	packedMessage, err := Pack(&message)
+	packedMessage, err = Pack(&message)
 	if err != nil {
 		return nil, err
 	}
@@ -98,12 +110,25 @@ func Encrypt(key, content, syncKey []byte, me, recipient *identity.User) (*Encry
 }
 
 func Decrypt(key []byte, encryptedMessage EncryptedMessage, syncKey []byte, me, recipient *identity.User) (*Message, error) {
+	var (
+		derivedKey      []byte
+		packedMessage   []byte
+		unpackedMessage *Message
+		payloadData     []byte
+	)
+
+	defer func() {
+		crypto.Zero(derivedKey)
+		crypto.Zero(packedMessage)
+		crypto.Zero(payloadData)
+	}()
+
 	messageInfo, err := crypto.GenerateMessageInfo(me.ID, recipient.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	derivedKey, err := crypto.HKDF(key, encryptedMessage.Salt, messageInfo, 32)
+	derivedKey, err = crypto.HKDF(key, encryptedMessage.Salt, messageInfo, 32)
 	if err != nil {
 		return nil, err
 	}
@@ -120,12 +145,12 @@ func Decrypt(key []byte, encryptedMessage EncryptedMessage, syncKey []byte, me, 
 		[]byte(secondID),
 	)
 
-	packedMessage, err := crypto.Decrypt(derivedKey, encryptedMessage.Ciphertext, encryptedMessage.Nonce, messageAAD)
+	packedMessage, err = crypto.Decrypt(derivedKey, encryptedMessage.Ciphertext, encryptedMessage.Nonce, messageAAD)
 	if err != nil {
 		return nil, err
 	}
 
-	unpackedMessage, err := Unpack(packedMessage)
+	unpackedMessage, err = Unpack(packedMessage)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +158,7 @@ func Decrypt(key []byte, encryptedMessage EncryptedMessage, syncKey []byte, me, 
 	timestampBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(timestampBytes, uint64(unpackedMessage.Timestamp))
 
-	payloadData := crypto.ConcatBytes(timestampBytes, []byte(me.ID), unpackedMessage.Content)
+	payloadData = crypto.ConcatBytes(timestampBytes, []byte(me.ID), unpackedMessage.Content)
 
 	syncTag, err := crypto.ComputeHMAC(syncKey, payloadData)
 	if err != nil {
