@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/slipe-fun/skid-v3/pkg/identity"
+	"github.com/slipe-fun/skid-v3/pkg/messages"
 )
 
 func main() {
@@ -40,7 +41,7 @@ func main() {
 	userBPrefix := fmt.Sprintf("[User %s]", userB.ID)
 
 	fmt.Println(userAPrefix, "Initializing handshake with", userB.ID)
-	handshakePayload, initializedChatKey, err := identity.InitiateKeyExchange(userA, secretA, userB)
+	handshakePayload, initializedChatKey, senderSyncKey, err := identity.InitiateKeyExchange(userA, secretA, userB)
 	if err != nil {
 		panic(err)
 	}
@@ -51,7 +52,7 @@ func main() {
 	fmt.Println()
 
 	fmt.Println(userAPrefix, "Self-finalizing handshake...")
-	syncedChatKey, err := identity.FinalizeKeyExchange(handshakePayload, userA, secretA, userB, nil, true)
+	syncedChatKey, syncedSenderSyncKey, err := identity.FinalizeKeyExchange(handshakePayload, userA, secretA, userB, nil, true)
 	if err != nil {
 		panic(err)
 	}
@@ -61,12 +62,63 @@ func main() {
 	fmt.Println()
 
 	fmt.Println(userBPrefix, "Finalizing handshake with", userA.ID)
-	receiverChatKey, err := identity.FinalizeKeyExchange(handshakePayload, userA, nil, userB, secretB, false)
+	receiverChatKey, receiverSyncKey, err := identity.FinalizeKeyExchange(handshakePayload, userA, nil, userB, secretB, false)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(userBPrefix, "Hanshake finalized!")
 	fmt.Println(userBPrefix, "Chat key:", hex.EncodeToString(receiverChatKey))
+
+	fmt.Println()
+
+	fmt.Println(userAPrefix, "Sending message to", userB.ID)
+	encryptedMsg1, err := messages.Encrypt(initializedChatKey, []byte("Hello, Bob!"), senderSyncKey, userA, userB)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(userAPrefix, "Message encrypted!")
+
+	fmt.Println()
+
+	fmt.Println(userBPrefix, "Receiving message from", userA.ID)
+	decryptedMsg1, err := messages.Decrypt(receiverChatKey, *encryptedMsg1, receiverSyncKey, userB, userA)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(userBPrefix, "Message decrypted!")
+	fmt.Println(userBPrefix, "Content:", string(decryptedMsg1.Content))
+	fmt.Println(userBPrefix, "Author ID:", decryptedMsg1.AuthorID)
+
+	fmt.Println()
+
+	fmt.Println(userAPrefix, "Syncing own outgoing message...")
+	syncedMsg1, err := messages.Decrypt(syncedChatKey, *encryptedMsg1, syncedSenderSyncKey, userA, userB)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(userAPrefix, "Outgoing message synced!")
+	fmt.Println(userAPrefix, "Content:", string(syncedMsg1.Content))
+	fmt.Println(userAPrefix, "Author ID:", syncedMsg1.AuthorID)
+
+	fmt.Println()
+
+	fmt.Println(userBPrefix, "Sending reply to", userA.ID)
+	encryptedMsg2, err := messages.Encrypt(receiverChatKey, []byte("Hey, Alice!"), receiverSyncKey, userB, userA)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(userBPrefix, "Message encrypted!")
+
+	fmt.Println()
+
+	fmt.Println(userAPrefix, "Receiving reply from", userB.ID)
+	decryptedMsg2, err := messages.Decrypt(syncedChatKey, *encryptedMsg2, syncedSenderSyncKey, userA, userB)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(userAPrefix, "Message decrypted!")
+	fmt.Println(userAPrefix, "Content:", string(decryptedMsg2.Content))
+	fmt.Println(userAPrefix, "Author ID:", decryptedMsg2.AuthorID)
 
 	fmt.Println("\neverything works!!!")
 }

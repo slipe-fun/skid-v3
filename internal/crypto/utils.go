@@ -3,6 +3,8 @@ package crypto
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"runtime"
 
 	"golang.org/x/crypto/blake2b"
@@ -48,4 +50,21 @@ func HashPublicKeys(ecdhPK, mlkemPK []byte) []byte {
 
 	hash := blake2b.Sum256(combined)
 	return hash[:10]
+}
+
+func GenerateMessageInfo(idA, idB string) (string, error) {
+	if idA == "" || idB == "" {
+		return "", errors.New("info generator: user IDs cannot be empty")
+	}
+
+	first := idA
+	second := idB
+
+	if idB < idA {
+		first = idB
+		second = idA
+	}
+
+	infoString := fmt.Sprintf("skid:v3:message:%s:%s", first, second)
+	return infoString, nil
 }

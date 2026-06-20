@@ -18,12 +18,12 @@ type HandshakePayload struct {
 	EncryptedSyncKey   EncryptedSyncKey
 }
 
-func InitiateKeyExchange(sender *User, senderSecretKeys *SecretKeys, receiver *User) (*HandshakePayload, []byte, error) {
+func InitiateKeyExchange(sender *User, senderSecretKeys *SecretKeys, receiver *User) (*HandshakePayload, []byte, []byte, error) {
 	if sender == nil || receiver == nil {
-		return nil, nil, errors.New("initiate: sender and receiver cannot be nil")
+		return nil, nil, nil, errors.New("initiate: sender and receiver cannot be nil")
 	}
 	if senderSecretKeys == nil {
-		return nil, nil, errors.New("initiate: senderSecretKeys cannot be nil")
+		return nil, nil, nil, errors.New("initiate: senderSecretKeys cannot be nil")
 	}
 
 	var (
@@ -51,23 +51,22 @@ func InitiateKeyExchange(sender *User, senderSecretKeys *SecretKeys, receiver *U
 		crypto.Zero(syncMaterial)
 		crypto.Zero(material)
 
-		crypto.Zero(syncKey)
 		crypto.Zero(rootKey)
 	}()
 
 	senderMlKemCiphertext, senderMlKemSharedSecret, err = crypto.EncapsulateMLKEM(sender.PublicKeys.MlKem768)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	receiverMlKemCiphertext, receiverMlKemSharedSecret, err = crypto.EncapsulateMLKEM(receiver.PublicKeys.MlKem768)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	ecdhSharedSecret, err = crypto.DeriveECDHSharedSecret(senderSecretKeys.X448, receiver.PublicKeys.X448)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	contextData := crypto.ConcatBytes(
@@ -86,7 +85,7 @@ func InitiateKeyExchange(sender *User, senderSecretKeys *SecretKeys, receiver *U
 	syncMaterial = crypto.ConcatBytes(senderMlKemSharedSecret, ecdhSharedSecret)
 	syncKey, err = crypto.HKDF(syncMaterial, sessionID[:], "skid:v3:sync_key", 32)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	syncAAD = crypto.BuildAAD("sync_material",
@@ -99,19 +98,19 @@ func InitiateKeyExchange(sender *User, senderSecretKeys *SecretKeys, receiver *U
 
 	syncKeyCiphertext, syncKeyNonce, err = crypto.Encrypt(syncKey, receiverMlKemSharedSecret, syncAAD)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	material = crypto.ConcatBytes(receiverMlKemSharedSecret, ecdhSharedSecret)
 
 	rootKey, err = crypto.HKDF(material, sessionID[:], "skid:v3:root_key", 32)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	chatKey, err = crypto.HKDF(rootKey, sessionID[:], "skid:v3:chat_key", 32)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	return &HandshakePayload{
@@ -121,23 +120,23 @@ func InitiateKeyExchange(sender *User, senderSecretKeys *SecretKeys, receiver *U
 			Ciphertext: syncKeyCiphertext,
 			Nonce:      syncKeyNonce,
 		},
-	}, chatKey, nil
+	}, chatKey, syncKey, nil
 }
 
-func FinalizeKeyExchange(payload *HandshakePayload, sender *User, senderSecretKeys *SecretKeys, receiver *User, receiverSecretKeys *SecretKeys, isSelf bool) ([]byte, error) {
+func FinalizeKeyExchange(payload *HandshakePayload, sender *User, senderSecretKeys *SecretKeys, receiver *User, receiverSecretKeys *SecretKeys, isSelf bool) ([]byte, []byte, error) {
 	if payload == nil {
-		return nil, errors.New("finalize: payload cannot be nil")
+		return nil, nil, errors.New("finalize: payload cannot be nil")
 	}
 	if sender == nil || receiver == nil {
-		return nil, errors.New("finalize: sender and receiver cannot be nil")
+		return nil, nil, errors.New("finalize: sender and receiver cannot be nil")
 	}
 	if isSelf {
 		if senderSecretKeys == nil {
-			return nil, errors.New("finalize: senderSecretKeys cannot be nil when isSelf is true")
+			return nil, nil, errors.New("finalize: senderSecretKeys cannot be nil when isSelf is true")
 		}
 	} else {
 		if receiverSecretKeys == nil {
-			return nil, errors.New("finalize: receiverSecretKeys cannot be nil when isSelf is false")
+			return nil, nil, errors.New("finalize: receiverSecretKeys cannot be nil when isSelf is false")
 		}
 	}
 
@@ -161,7 +160,6 @@ func FinalizeKeyExchange(payload *HandshakePayload, sender *User, senderSecretKe
 		crypto.Zero(syncMaterial)
 		crypto.Zero(material)
 
-		crypto.Zero(syncKey)
 		crypto.Zero(rootKey)
 	}()
 
@@ -181,18 +179,18 @@ func FinalizeKeyExchange(payload *HandshakePayload, sender *User, senderSecretKe
 	if isSelf {
 		ecdhSharedSecret, err = crypto.DeriveECDHSharedSecret(senderSecretKeys.X448, receiver.PublicKeys.X448)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		senderMlKemSharedSecret, err = crypto.DecapsulateMLKEM(senderSecretKeys.MlKem768, payload.SenderCiphertext)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		syncMaterial = crypto.ConcatBytes(senderMlKemSharedSecret, ecdhSharedSecret)
 		syncKey, err = crypto.HKDF(syncMaterial, sessionID[:], "skid:v3:sync_key", 32)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		syncAAD := crypto.BuildAAD("sync_material",
@@ -205,16 +203,22 @@ func FinalizeKeyExchange(payload *HandshakePayload, sender *User, senderSecretKe
 
 		receiverMlKemSharedSecret, err = crypto.Decrypt(syncKey, payload.EncryptedSyncKey.Ciphertext, payload.EncryptedSyncKey.Nonce, syncAAD)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	} else {
 		ecdhSharedSecret, err = crypto.DeriveECDHSharedSecret(receiverSecretKeys.X448, sender.PublicKeys.X448)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		receiverMlKemSharedSecret, err = crypto.DecapsulateMLKEM(receiverSecretKeys.MlKem768, payload.ReceiverCiphertext)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+
+		syncMaterial = crypto.ConcatBytes(receiverMlKemSharedSecret, ecdhSharedSecret)
+		syncKey, err = crypto.HKDF(syncMaterial, sessionID[:], "skid:v3:sync_key", 32)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 
@@ -222,13 +226,13 @@ func FinalizeKeyExchange(payload *HandshakePayload, sender *User, senderSecretKe
 
 	rootKey, err = crypto.HKDF(material, sessionID[:], "skid:v3:root_key", 32)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	chatKey, err = crypto.HKDF(rootKey, sessionID[:], "skid:v3:chat_key", 32)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return chatKey, nil
+	return chatKey, syncKey, nil
 }

@@ -1,0 +1,150 @@
+package messages
+
+import (
+	"crypto/hmac"
+	"encoding/binary"
+	"encoding/json"
+	"time"
+
+	"github.com/slipe-fun/skid-v3/internal/crypto"
+	"github.com/slipe-fun/skid-v3/pkg/identity"
+)
+
+type EncryptedMessage struct {
+	Ciphertext []byte
+	Nonce      []byte
+	Salt       []byte
+}
+
+type Message struct {
+	Content   []byte
+	AuthorID  string
+	SyncTag   []byte
+	Timestamp int64
+}
+
+func Pack(m *Message) ([]byte, error) {
+	return json.Marshal(m)
+}
+
+func Unpack(packed []byte) (*Message, error) {
+	var m Message
+	err := json.Unmarshal(packed, &m)
+	return &m, err
+}
+
+func Encrypt(key, content, syncKey []byte, me, recipient *identity.User) (*EncryptedMessage, error) {
+	salt, err := crypto.RandomBytes(32)
+	if err != nil {
+		return nil, err
+	}
+
+	messageInfo, err := crypto.GenerateMessageInfo(me.ID, recipient.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	derivedKey, err := crypto.HKDF(key, salt, messageInfo, 32)
+	if err != nil {
+		return nil, err
+	}
+
+	firstID := me.ID
+	secondID := recipient.ID
+	if secondID < firstID {
+		firstID = recipient.ID
+		secondID = me.ID
+	}
+
+	messageAAD := crypto.BuildAAD("message",
+		[]byte(firstID),
+		[]byte(secondID),
+	)
+
+	timestamp := time.Now().Unix()
+
+	timestampBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(timestampBytes, uint64(timestamp))
+
+	payloadData := crypto.ConcatBytes(timestampBytes, []byte(me.ID), content)
+
+	syncTag, err := crypto.ComputeHMAC(syncKey, payloadData)
+	if err != nil {
+		return nil, err
+	}
+
+	message := Message{
+		Content:   content,
+		AuthorID:  me.ID,
+		SyncTag:   syncTag,
+		Timestamp: timestamp,
+	}
+
+	packedMessage, err := Pack(&message)
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext, nonce, err := crypto.Encrypt(derivedKey, packedMessage, messageAAD)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EncryptedMessage{
+		Ciphertext: ciphertext,
+		Nonce:      nonce,
+		Salt:       salt,
+	}, nil
+}
+
+func Decrypt(key []byte, encryptedMessage EncryptedMessage, syncKey []byte, me, recipient *identity.User) (*Message, error) {
+	messageInfo, err := crypto.GenerateMessageInfo(me.ID, recipient.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	derivedKey, err := crypto.HKDF(key, encryptedMessage.Salt, messageInfo, 32)
+	if err != nil {
+		return nil, err
+	}
+
+	firstID := me.ID
+	secondID := recipient.ID
+	if secondID < firstID {
+		firstID = recipient.ID
+		secondID = me.ID
+	}
+
+	messageAAD := crypto.BuildAAD("message",
+		[]byte(firstID),
+		[]byte(secondID),
+	)
+
+	packedMessage, err := crypto.Decrypt(derivedKey, encryptedMessage.Ciphertext, encryptedMessage.Nonce, messageAAD)
+	if err != nil {
+		return nil, err
+	}
+
+	unpackedMessage, err := Unpack(packedMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	timestampBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(timestampBytes, uint64(unpackedMessage.Timestamp))
+
+	payloadData := crypto.ConcatBytes(timestampBytes, []byte(me.ID), unpackedMessage.Content)
+
+	syncTag, err := crypto.ComputeHMAC(syncKey, payloadData)
+	if err != nil {
+		return nil, err
+	}
+
+	if hmac.Equal(unpackedMessage.SyncTag, syncTag) {
+		unpackedMessage.AuthorID = me.ID
+	} else {
+		unpackedMessage.AuthorID = recipient.ID
+	}
+
+	return unpackedMessage, nil
+}
