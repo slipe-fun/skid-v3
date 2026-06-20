@@ -35,7 +35,7 @@ func GenerateMLKEMKeyPair() ([]byte, []byte, error) {
 	return pkBytes, skBytes, nil
 }
 
-func EncapsulateMLKEM(pkBytes []byte) ([]byte, []byte, error) {
+func EncapsulateMLKEM(pkBytes []byte) (ciphertext []byte, sharedSecret []byte, err error) {
 	if len(pkBytes) != mlkem768.PublicKeySize {
 		return nil, nil, errors.New("invalid public key size")
 	}
@@ -87,9 +87,7 @@ func DecapsulateMLKEM(skBytes, ct []byte) ([]byte, error) {
 
 	ss, err := mlkem768.Scheme().Decapsulate(sk, ct)
 	if err != nil {
-		for i := range ss {
-			ss[i] = 0
-		}
+		Zero(ss)
 		return nil, err
 	}
 

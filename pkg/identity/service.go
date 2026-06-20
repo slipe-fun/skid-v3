@@ -2,7 +2,6 @@ package identity
 
 import (
 	"errors"
-	"runtime"
 
 	"github.com/cloudflare/circl/dh/x448"
 	"github.com/cloudflare/circl/kem/mlkem/mlkem768"
@@ -15,19 +14,9 @@ func GenerateIdentity() (user *User, secret *SecretKeys, err error) {
 
 	defer func() {
 		if err != nil {
-			for i := range mlKem768Secret {
-				mlKem768Secret[i] = 0
-			}
-			for i := range x448Secret {
-				x448Secret[i] = 0
-			}
-			for i := range ed448Secret {
-				ed448Secret[i] = 0
-			}
-
-			runtime.KeepAlive(mlKem768Secret)
-			runtime.KeepAlive(x448Secret)
-			runtime.KeepAlive(ed448Secret)
+			crypto.Zero(mlKem768Secret)
+			crypto.Zero(x448Secret)
+			crypto.Zero(ed448Secret)
 		}
 	}()
 
@@ -81,18 +70,9 @@ func NewSecretKeys(kem, ecdh, ed []byte) (secret *SecretKeys, err error) {
 
 	defer func() {
 		if err != nil {
-			for i := range kemCopy {
-				kemCopy[i] = 0
-			}
-			for i := range ecdhCopy {
-				ecdhCopy[i] = 0
-			}
-			for i := range edCopy {
-				edCopy[i] = 0
-			}
-			runtime.KeepAlive(kemCopy)
-			runtime.KeepAlive(ecdhCopy)
-			runtime.KeepAlive(edCopy)
+			crypto.Zero(kemCopy)
+			crypto.Zero(ecdhCopy)
+			crypto.Zero(edCopy)
 		}
 	}()
 

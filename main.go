@@ -1,35 +1,49 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"github.com/slipe-fun/skid-v3/pkg/identity"
 )
 
 func main() {
-	user, secret, err := identity.GenerateIdentity()
+	userA, secretA, err := identity.GenerateIdentity()
 	if err != nil {
 		panic(err)
 	}
-	defer secret.Wipe()
+	defer secretA.Wipe()
 
 	userID := "8MNQQ2ky6YVTCT"
 
 	restoredUser := identity.User{
 		ID: userID,
 		PublicKeys: identity.PublicKeys{
-			MlKem768: user.PublicKeys.MlKem768,
-			X448:     user.PublicKeys.X448,
-			Ed448:    user.PublicKeys.Ed448,
+			MlKem768: userA.PublicKeys.MlKem768,
+			X448:     userA.PublicKeys.X448,
+			Ed448:    userA.PublicKeys.Ed448,
 		},
 	}
 	_ = restoredUser
 
-	restoredSecret, err := identity.NewSecretKeys(secret.MlKem768, secret.X448, secret.Ed448)
+	restoredSecret, err := identity.NewSecretKeys(secretA.MlKem768, secretA.X448, secretA.Ed448)
 	if err != nil {
 		panic(err)
 	}
 	defer restoredSecret.Wipe()
 
+	userB, secretB, err := identity.GenerateIdentity()
+	if err != nil {
+		panic(err)
+	}
+	defer secretB.Wipe()
+
+	handshakePayload, chatKey, err := identity.InitiateKeyExchange(userA, secretA, userB)
+	if err != nil {
+		panic(err)
+	}
+	_ = handshakePayload
+
+	fmt.Println(hex.EncodeToString(chatKey))
 	fmt.Println("everything works")
 }

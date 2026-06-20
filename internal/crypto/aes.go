@@ -16,10 +16,7 @@ func NewAes(key []byte) (*subtle.AESGCMSIV, error) {
 	copy(localKey, key)
 
 	defer func() {
-		for i := range localKey {
-			localKey[i] = 0
-		}
-		runtime.KeepAlive(localKey)
+		Zero(localKey)
 	}()
 
 	return subtle.NewAESGCMSIV(localKey)
@@ -54,10 +51,7 @@ func Encrypt(key, plaintext, aad []byte) ([]byte, []byte, error) {
 	copy(ciphertext, fullResult[12:])
 
 	defer func() {
-		for i := range fullResult {
-			fullResult[i] = 0
-		}
-		runtime.KeepAlive(fullResult)
+		Zero(fullResult)
 	}()
 
 	return ciphertext, iv, nil
@@ -90,10 +84,7 @@ func Decrypt(key, ciphertext, iv, aad []byte) ([]byte, error) {
 	fullCiphertext = append(fullCiphertext, ciphertext...)
 
 	defer func() {
-		for i := range fullCiphertext {
-			fullCiphertext[i] = 0
-		}
-		runtime.KeepAlive(fullCiphertext)
+		Zero(fullCiphertext)
 	}()
 
 	return aes.Decrypt(fullCiphertext, aad)

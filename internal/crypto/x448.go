@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
-	"runtime"
 
 	"github.com/cloudflare/circl/dh/x448"
 )
@@ -24,10 +23,7 @@ func GenerateECDHKeyPair() ([]byte, []byte, error) {
 	copy(privOut, sk[:])
 
 	defer func() {
-		for i := range sk {
-			sk[i] = 0
-		}
-		runtime.KeepAlive(sk)
+		Zero(sk[:])
 	}()
 
 	return pubOut, privOut, nil
@@ -43,18 +39,9 @@ func DeriveECDHSharedSecret(sk, pk []byte) ([]byte, error) {
 	copy(public[:], pk)
 
 	defer func() {
-		for i := range secret {
-			secret[i] = 0
-		}
-		for i := range public {
-			public[i] = 0
-		}
-		for i := range shared {
-			shared[i] = 0
-		}
-		runtime.KeepAlive(secret)
-		runtime.KeepAlive(public)
-		runtime.KeepAlive(shared)
+		Zero(secret[:])
+		Zero(public[:])
+		Zero(shared[:])
 	}()
 
 	if ok := x448.Shared(&shared, &secret, &public); !ok {

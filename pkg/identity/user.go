@@ -1,6 +1,8 @@
 package identity
 
-import "runtime"
+import (
+	"github.com/slipe-fun/skid-v3/internal/crypto"
+)
 
 type PublicKeys struct {
 	MlKem768 []byte `json:"ml_kem768_public_key"`
@@ -23,17 +25,8 @@ func (s *SecretKeys) Wipe() {
 	if s == nil {
 		return
 	}
-	for i := range s.MlKem768 {
-		s.MlKem768[i] = 0
-	}
-	for i := range s.X448 {
-		s.X448[i] = 0
-	}
-	for i := range s.Ed448 {
-		s.Ed448[i] = 0
-	}
 
-	runtime.KeepAlive(s.MlKem768)
-	runtime.KeepAlive(s.X448)
-	runtime.KeepAlive(s.Ed448)
+	crypto.Zero(s.MlKem768)
+	crypto.Zero(s.X448)
+	crypto.Zero(s.Ed448)
 }

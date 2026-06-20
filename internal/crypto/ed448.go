@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"runtime"
 
 	"github.com/cloudflare/circl/sign/ed448"
 )
@@ -21,10 +20,7 @@ func GenerateEd448KeyPair() ([]byte, []byte, error) {
 	copy(skOut, sk)
 
 	defer func() {
-		for i := range sk {
-			sk[i] = 0
-		}
-		runtime.KeepAlive(sk)
+		Zero(sk)
 	}()
 
 	return pkOut, skOut, nil
@@ -42,10 +38,7 @@ func SignEd448(skBytes []byte, message []byte, ctx string) ([]byte, error) {
 	copy(sk, skBytes)
 
 	defer func() {
-		for i := range sk {
-			sk[i] = 0
-		}
-		runtime.KeepAlive(sk)
+		Zero(sk)
 	}()
 
 	var signature []byte
